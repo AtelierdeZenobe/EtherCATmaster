@@ -41,7 +41,11 @@ struct timespec timespec_add(struct timespec time1, struct timespec time2)
     return result;
 }
 
-static int valueOffset;
+static unsigned int receiveOffset;
+static unsigned int sendOffset;
+static const ec_pdo_entry_reg_t domain1_regs[] = {
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 1, &receiveOffset  , 0}
+};
 
 void check_master_state(void)
 {
@@ -78,21 +82,25 @@ void cyclic_task()
 	struct timespec wakeupTime, time;
 	clock_gettime(CLOCK_TO_USE, &wakeupTime);
 	
+	int count = 0;
 	while(1)
 	{
+		count ++;
+		count = count%10;
 		wakeupTime = timespec_add(wakeupTime, cycletime);
         clock_nanosleep(CLOCK_TO_USE, TIMER_ABSTIME, &wakeupTime, NULL);
 
 		ecrt_master_application_time(master, TIMESPEC2NS(wakeupTime));
 		
 		ecrt_master_receive(master);
-		ecrt_domain_process(domain1);
+		//ecrt_domain_process(domain1);
+		//check_domain1_state();
 
-		check_domain1_state();
-
-		EC_WRITE_U8(domain1_pd + valueOffset, 0x66);
+		printf("data: %u\n", EC_READ_U8(domain1_pd + receiveOffset));
+		EC_WRITE_U8(domain1_pd + sendOffset, count);
 
 		ecrt_domain_queue(domain1);
+		ecrt_master_send(master);
 		//printf("Cyclic task\n");
 	}
 }
@@ -122,7 +130,7 @@ int main ( void )
 		return -1;
 	}
 
-    // Create slave config
+    // Create receive slave config
     sc = ecrt_master_slave_config(master, SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode);
     if (!sc)
 	{
@@ -130,13 +138,30 @@ int main ( void )
         return -1;
 	}
 
-    valueOffset = ecrt_slave_config_reg_pdo_entry(sc,
-            0x0005, 1, domain1, NULL);
-    if (valueOffset < 0)
+    receiveOffset = ecrt_slave_config_reg_pdo_entry(sc,
+            0x0006, 1, domain1, NULL);
+    if (receiveOffset < 0)
 	{
 		printf("Could not register PDO\n");
         return -1;
 	}
+
+	// Create send slave config
+    sc = ecrt_master_slave_config(master, SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode);
+    if (!sc)
+	{
+		printf("Could not ecrt_master_slave_config\n");
+        return -1;
+	}
+
+    sendOffset = ecrt_slave_config_reg_pdo_entry(sc,
+            0x0005, 1, domain1, NULL);
+    if (sendOffset < 0)
+	{
+		printf("Could not register PDO\n");
+        return -1;
+	}
+
 
 	// Activating
 	printf("Activating master...\n");
