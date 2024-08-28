@@ -1,4 +1,4 @@
-#include <ecrt.h>
+#include <ecrt.h> // The ethercat lib
 #include <stdio.h>
 #include <time.h>
 #include <sys/ioctl.h>
@@ -16,42 +16,33 @@
 #define SlaveVendorId 0x0000079A
 #define SlaveProductCode 0xDEADBEEF
 
+// Master pointer and state
 static ec_master_t *master = NULL;
 static ec_master_state_t master_state = {};
 
+// Domain (data exchange area) pointer and state
 static ec_domain_t *domain1 = NULL;
 static ec_domain_state_t domain1_state = {};
 
 const struct timespec cycletime = {0, PERIOD_NS};
 
-static uint8_t *domain1_pd = NULL;
+// Process data
+static uint8_t *domain1_pd = NULL; // To access data in the domain and send data in the domain. Essentially the pointer to the start of the domain.
+static unsigned int receiveOffset; // Offset from the start of the domain, to access the correct byte.
+static unsigned int sendOffset; // Offset from the start of the domain, to access the correct byte.
 
-struct timespec timespec_add(struct timespec time1, struct timespec time2)
-{
-    struct timespec result;
+static const ec_pdo_entry_reg_t domain1_regs[] = // Register the RX_pdos (data to receive)
+		{{SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 1, &receiveOffset, 0}}; // One variable to receive per line.
 
-    if ((time1.tv_nsec + time2.tv_nsec) >= NSEC_PER_SEC) {
-        result.tv_sec = time1.tv_sec + time2.tv_sec + 1;
-        result.tv_nsec = time1.tv_nsec + time2.tv_nsec - NSEC_PER_SEC;
-    } else {
-        result.tv_sec = time1.tv_sec + time2.tv_sec;
-        result.tv_nsec = time1.tv_nsec + time2.tv_nsec;
-    }
-
-    return result;
-}
-
-static unsigned int receiveOffset;
-static unsigned int sendOffset;
-static const ec_pdo_entry_reg_t domain1_regs[] = {
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 1, &receiveOffset  , 0}
-};
+// Helper function for timespecs
+struct timespec timespec_add(struct timespec time1, struct timespec time2);
 
 void check_master_state(void)
 {
+	// TODO: check if it is necessary (directly use master_state otherwise)
     ec_master_state_t ms;
 
-    ecrt_master_state(master, &ms);
+    ecrt_master_state(master, &ms); // Read the current master state
 
     if (ms.slaves_responding != master_state.slaves_responding)
         printf("%u slave(s).\n", ms.slaves_responding);
@@ -65,6 +56,7 @@ void check_master_state(void)
 
 void check_domain1_state(void)
 {
+	// TODO: check if it is necessary (directly use domain1_state otherwise)
     ec_domain_state_t ds;
 
     ecrt_domain_state(domain1, &ds);
@@ -85,13 +77,18 @@ void cyclic_task()
 	int count = 0;
 	while(1)
 	{
+		// Debug count for testing
 		count ++;
 		count = count%10;
+		// Define the cycling period
+		// TODO: make it clearer
 		wakeupTime = timespec_add(wakeupTime, cycletime);
         clock_nanosleep(CLOCK_TO_USE, TIMER_ABSTIME, &wakeupTime, NULL);
 
+		// Set the application time
 		ecrt_master_application_time(master, TIMESPEC2NS(wakeupTime));
 		
+		// Fetch data
 		ecrt_master_receive(master);
 		//ecrt_domain_process(domain1);
 		//check_domain1_state();
@@ -99,12 +96,15 @@ void cyclic_task()
 		printf("data: %u\n", EC_READ_U8(domain1_pd + receiveOffset));
 		EC_WRITE_U8(domain1_pd + sendOffset, count);
 
+		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
+
+		// Actually send data
 		ecrt_master_send(master);
-		//printf("Cyclic task\n");
 	}
 }
 
+// TODO: init function with all this then only cyclic task
 int main ( void )
 {
 	
@@ -129,40 +129,47 @@ int main ( void )
 		printf("Domain1 could not be created\n");
 		return -1;
 	}
+	else
+	{
+		printf("Domain1 created\n");
+	}
 
-    // Create receive slave config
+    // Create receive slave config (obtain a slave configuration)
     sc = ecrt_master_slave_config(master, SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode);
     if (!sc)
 	{
 		printf("Could not ecrt_master_slave_config\n");
         return -1;
 	}
+	else
+	{
+		printf("master slave config created\n");
+	}
 
-    receiveOffset = ecrt_slave_config_reg_pdo_entry(sc,
-            0x0006, 1, domain1, NULL);
+	// Register PDOs entry for exchange in domain
+	
+    receiveOffset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 1, domain1, NULL);
     if (receiveOffset < 0)
 	{
 		printf("Could not register PDO\n");
         return -1;
 	}
-
-	// Create send slave config
-    sc = ecrt_master_slave_config(master, SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode);
-    if (!sc)
+	else
 	{
-		printf("Could not ecrt_master_slave_config\n");
-        return -1;
+		printf("PDO registered\n");
 	}
-
-    sendOffset = ecrt_slave_config_reg_pdo_entry(sc,
-            0x0005, 1, domain1, NULL);
+	
+    sendOffset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 1, domain1, NULL);
     if (sendOffset < 0)
 	{
 		printf("Could not register PDO\n");
         return -1;
 	}
-
-
+	else
+	{
+		printf("PDO registered\n");
+	}
+	
 	// Activating
 	printf("Activating master...\n");
     if (ecrt_master_activate(master))
@@ -170,12 +177,20 @@ int main ( void )
 		printf("Could not activate master\n");
 		return -1;
 	}
+	else
+	{
+		printf("Master activated\n");
+	}
 
-    if (!(domain1_pd = ecrt_domain_data(domain1)))
+	if (!(domain1_pd = ecrt_domain_data(domain1))) // Get the domain's process data. Has to be called after ecrt_master_actiate
 	{
 		printf("Could not ecrt_domain_data(domain1)\n");
         return -1;
     }
+	else
+	{
+		printf("Got domain's process data\n");
+	}
 
 	printf("Starting cyclic function.\n");
     cyclic_task();
@@ -183,3 +198,17 @@ int main ( void )
 	return 0;
 }
 
+struct timespec timespec_add(struct timespec time1, struct timespec time2)
+{
+    struct timespec result;
+
+    if ((time1.tv_nsec + time2.tv_nsec) >= NSEC_PER_SEC) {
+        result.tv_sec = time1.tv_sec + time2.tv_sec + 1;
+        result.tv_nsec = time1.tv_nsec + time2.tv_nsec - NSEC_PER_SEC;
+    } else {
+        result.tv_sec = time1.tv_sec + time2.tv_sec;
+        result.tv_nsec = time1.tv_nsec + time2.tv_nsec;
+    }
+
+    return result;
+}
