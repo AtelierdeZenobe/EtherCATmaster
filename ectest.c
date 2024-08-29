@@ -1,4 +1,4 @@
-#include <ecrt.h> // The ethercat lib
+#include <ecrt.h> // The etec_pdo_entry_reg_thercat lib
 #include <stdio.h>
 #include <time.h>
 #include <sys/ioctl.h>
@@ -28,11 +28,25 @@ const struct timespec cycletime = {0, PERIOD_NS};
 
 // Process data
 static uint8_t *domain1_pd = NULL; // To access data in the domain and send data in the domain. Essentially the pointer to the start of the domain.
-static unsigned int receiveOffset; // Offset from the start of the domain, to access the correct byte.
-static unsigned int sendOffset; // Offset from the start of the domain, to access the correct byte.
+static unsigned int motorBase_offset; // Offset from the start of the domain, to access the correct byte._t
+static unsigned int otherMessage_offset; // Offset from the start of the domain, to access the correct byte.
+static unsigned int wantedDistance_offset;
+static unsigned int wantedAngle_offset;
+static unsigned int wantedSpeed_offset;
+static unsigned int wantedRotation_offset;
+static const ec_pdo_entry_reg_t domain1_regs[] =
+{
+    // Outputs (RxPDO) - SM0
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x01, &motorBase_offset},  // motorBase_state
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x02, &otherMessage_offset}, // other_message
 
-static const ec_pdo_entry_reg_t domain1_regs[] = // Register the RX_pdos (data to receive)
-		{{SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 1, &receiveOffset, 0}}; // One variable to receive per line.
+    // Inputs (TxPDO) - SM1
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x01, &wantedDistance_offset}, // wanted_distance
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x02, &wantedAngle_offset}, // wanted_angle
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x03, &wantedSpeed_offset}, // wanted_speed
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x04, &wantedRotation_offset}, // wanted_rotation
+};
+
 
 // Helper function for timespecs
 struct timespec timespec_add(struct timespec time1, struct timespec time2);
@@ -93,8 +107,10 @@ void cyclic_task()
 		//ecrt_domain_process(domain1);
 		//check_domain1_state();
 
-		printf("data: %u\n", EC_READ_U8(domain1_pd + receiveOffset));
-		EC_WRITE_U8(domain1_pd + sendOffset, count);
+		printf("motorBase_state: %u\n", EC_READ_U8(domain1_pd + motorBase_offset));
+		printf("other_message: %u\n", EC_READ_U8(domain1_pd + otherMessage_offset));
+		EC_WRITE_U16(domain1_pd + wantedDistance_offset, 10);
+		EC_WRITE_U16(domain1_pd + wantedAngle_offset, 20);
 
 		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
@@ -146,6 +162,26 @@ int main ( void )
 		printf("master slave config created\n");
 	}
 
+	/*
+	// Register all PDO entries at once
+	if (ecrt_domain_reg_pdo_entry_list(domain1, domain1_regs)) {
+    		fprintf(stderr, "PDO entry registration failed!\n");
+    		//return -1;
+	}
+	*/
+motorBase_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 1, domain1, NULL);
+printf("motorBaseState_offset: %u\n", motorBase_offset);
+otherMessage_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 2, domain1, NULL);
+printf("otherMessage_offset: %u\n", otherMessage_offset);
+wantedDistance_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 1, domain1, NULL);
+printf("wantedDistance_offset: %u\n", wantedDistance_offset);
+wantedAngle_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 2, domain1, NULL);
+printf("wantedAngle_offset: %u\n", wantedAngle_offset);
+wantedSpeed_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 3, domain1, NULL);
+printf("wantedSpeed_offset: %u\n", wantedSpeed_offset);
+wantedRotation_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 4, domain1, NULL);
+printf("wantedRotation_offset: %u\n", wantedRotation_offset);
+	/*
 	// Register PDOs entry for exchange in domain
 	
     receiveOffset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 1, domain1, NULL);
@@ -169,7 +205,7 @@ int main ( void )
 	{
 		printf("PDO registered\n");
 	}
-	
+	*/
 	// Activating
 	printf("Activating master...\n");
     if (ecrt_master_activate(master))
