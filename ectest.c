@@ -37,16 +37,48 @@ static unsigned int wantedRotation_offset;
 static const ec_pdo_entry_reg_t domain1_regs[] =
 {
     // Outputs (RxPDO) - SM0
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x01, &motorBase_offset},  // motorBase_state
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x02, &otherMessage_offset}, // other_message
+	{SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x01, &wantedDistance_offset, 0}, // wanted_distance
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x02, &wantedAngle_offset, 0}, // wanted_angle
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x03, &wantedSpeed_offset, 0}, // wanted_speed
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x04, &wantedRotation_offset, 0}, // wanted_rotation
 
     // Inputs (TxPDO) - SM1
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x01, &wantedDistance_offset}, // wanted_distance
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x02, &wantedAngle_offset}, // wanted_angle
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x03, &wantedSpeed_offset}, // wanted_speed
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x04, &wantedRotation_offset}, // wanted_rotation
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x02, &motorBase_offset, 0},  // motorBase_state
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x01, &otherMessage_offset, 0}, // other_message
 };
 
+// Define PDO entries for the slave
+// SENT TO SLAVE
+const ec_pdo_entry_info_t rxpdo_entries[] = {
+	{0x0005, 0x01, 16}, // wanted_distance
+    {0x0005, 0x02, 16}, // wanted_angle
+    {0x0005, 0x03, 16}, // wanted_speed
+    {0x0005, 0x04, 16}, // wanted_rotation
+};
+
+// RECEIVED FROM SLAVE
+const ec_pdo_entry_info_t txpdo_entries[] = {
+    {0x0006, 0x02, 8}, // motorBase_state
+    {0x0006, 0x01, 16}, // other_message
+};
+
+// Define PDOs
+const ec_pdo_info_t pdos_out[] = {
+    {0x1600, 4, rxpdo_entries},  // RxPDO for outputs
+};
+
+const ec_pdo_info_t pdos_in[] = {
+    {0x1A00, 2, txpdo_entries},  // TxPDO for inputs
+};
+
+// Define Sync Managers
+const ec_sync_info_t syncs[] = {
+    //{0, EC_DIR_OUTPUT, 0, NULL, EC_WD_DISABLE},    // Sync Manager 0, no PDOs
+    //{1, EC_DIR_INPUT, 0, NULL, EC_WD_DISABLE},     // Sync Manager 1, no PDOs
+    {0, EC_DIR_OUTPUT, 1, pdos_out, EC_WD_DEFAULT}, // Sync Manager 2, RxPDOs (Outputs)
+    {1, EC_DIR_INPUT, 1, pdos_in, EC_WD_DEFAULT},  // Sync Manager 3, TxPDOs (Inputs)
+    {0xFF}  // End of sync manager list
+};
 
 // Helper function for timespecs
 struct timespec timespec_add(struct timespec time1, struct timespec time2);
@@ -93,7 +125,7 @@ void cyclic_task()
 	{
 		// Debug count for testing
 		count ++;
-		count = count%10;
+		//count = count%10;
 		// Define the cycling period
 		// TODO: make it clearer
 		wakeupTime = timespec_add(wakeupTime, cycletime);
@@ -107,11 +139,14 @@ void cyclic_task()
 		//ecrt_domain_process(domain1);
 		//check_domain1_state();
 
-		printf("motorBase_state: %u\n", EC_READ_U8(domain1_pd + motorBase_offset));
-		printf("other_message: %u\n", EC_READ_U8(domain1_pd + otherMessage_offset));
-		EC_WRITE_U16(domain1_pd + wantedDistance_offset, 10);
-		EC_WRITE_U16(domain1_pd + wantedAngle_offset, 20);
-
+		//if(1)
+		if(count%1000 == 0)
+		{
+			printf("motorBase_state: %u\n", EC_READ_U8(domain1_pd + motorBase_offset));
+			printf("other_message: %u\n", EC_READ_U16(domain1_pd + otherMessage_offset));
+			EC_WRITE_U16(domain1_pd + wantedDistance_offset, 0x0010);
+			EC_WRITE_U16(domain1_pd + wantedAngle_offset, 0x0020);
+		}
 		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
 
@@ -169,9 +204,19 @@ int main ( void )
     		//return -1;
 	}
 	*/
-motorBase_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 1, domain1, NULL);
+
+    if (ecrt_slave_config_pdos(sc, EC_END, syncs)) {
+        printf("Failed to configure PDOs!\n");
+        return -1;
+    }
+	else
+	{
+		printf("Successfully configured pdos.\n");
+	}
+
+motorBase_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 2, domain1, NULL);
 printf("motorBaseState_offset: %u\n", motorBase_offset);
-otherMessage_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 2, domain1, NULL);
+otherMessage_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 1, domain1, NULL);
 printf("otherMessage_offset: %u\n", otherMessage_offset);
 wantedDistance_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 1, domain1, NULL);
 printf("wantedDistance_offset: %u\n", wantedDistance_offset);
