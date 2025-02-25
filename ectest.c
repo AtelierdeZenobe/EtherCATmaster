@@ -3,6 +3,19 @@
 #include <time.h>
 #include <sys/ioctl.h>
 
+// Macros to use big-endian even if ethercat master is compiled in litle-endian.
+#define sendMessage(ethercat_data_pointer, msg) \
+    _Generic((msg), \
+        uint8_t: sendMessage_u8, \
+        uint16_t: sendMessage_u16 \
+    )(ethercat_data_pointer, msg)
+
+#define readMessage(ethercat_data_pointer, type) \
+    _Generic((type), \
+        uint8_t: readMessage_u8, \
+        uint16_t: readMessage_u16 \
+    )(ethercat_data_pointer)
+
 #define FREQUENCY 1000
 #define CLOCK_TO_USE CLOCK_MONOTONIC
 
@@ -57,7 +70,8 @@ const ec_pdo_entry_info_t rxpdo_entries[] = {
 };
 
 // RECEIVED FROM SLAVE
-const ec_pdo_entry_info_t txpdo_entries[] = {
+const ec_pdo_entry_info_t txpdo_entries[] =
+{
     {0x0006, 0x02, 8}, // motorBase_state
     {0x0006, 0x01, 16}, // other_message
 };
@@ -79,6 +93,25 @@ const ec_sync_info_t syncs[] = {
     {1, EC_DIR_INPUT, 1, pdos_in, EC_WD_DEFAULT},  // Sync Manager 3, TxPDOs (Inputs)
     {0xFF}  // End of sync manager list
 };
+
+void sendMessage_u8(const uint8_t* ethercat_data_pointer, const uint8_t msg)
+{
+	EC_WRITE_U8(ethercat_data_pointer, msg);
+}
+void sendMessage_u16(const uint8_t* ethercat_data_pointer, const uint16_t msg)
+{
+	uint16_t msgLitleEndian = (msg >> 8) | (msg << 8);
+	EC_WRITE_U16(ethercat_data_pointer, msgLitleEndian);
+}
+
+uint8_t readMessage_u8(const uint8_t* ethercat_data_pointer) {
+    return EC_READ_U8(ethercat_data_pointer);
+}
+
+uint16_t readMessage_u16(const uint8_t* ethercat_data_pointer) {
+    uint16_t value = EC_READ_U16(ethercat_data_pointer);
+    return (value >> 8) | (value << 8);  // Convert to big-endian if needed
+}
 
 // Helper function for timespecs
 struct timespec timespec_add(struct timespec time1, struct timespec time2);
@@ -140,12 +173,21 @@ void cyclic_task()
 		//check_domain1_state();
 
 		//if(1)
+		static int lowerCounter = 0;
 		if(count%1000 == 0)
 		{
-			printf("motorBase_state: %u\n", EC_READ_U8(domain1_pd + motorBase_offset));
-			printf("other_message: %u\n", EC_READ_U16(domain1_pd + otherMessage_offset));
-			EC_WRITE_U16(domain1_pd + wantedDistance_offset, 0x0010);
-			EC_WRITE_U16(domain1_pd + wantedAngle_offset, 0x0020);
+			lowerCounter = (++lowerCounter) % 1000;
+			//printf("motorBase_state: %02x\n", EC_READ_U8(domain1_pd + motorBase_offset));
+			/// !!! LITLE ENDIAN
+			uint16_t otherMessage_litleENdian = EC_READ_U16(domain1_pd + otherMessage_offset);
+			uint16_t otherMessage_bigEndian = (otherMessage_litleENdian >> 8) | (otherMessage_litleENdian << 8);
+			// Convert to Big Endian
+			//printf("other_message: %04x\n", otherMessage_bigEndian);
+
+			//printf("motorBase_state: %02x\n", readMessage(domain1_pd + motorBase_offset, (uint8_t)0));
+			//printf("other_message: %04x\n", readMessage(domain1_pd + otherMessage_offset, (uint16_t)0));
+			sendMessage(domain1_pd + wantedDistance_offset, (uint16_t)(lowerCounter));
+			sendMessage(domain1_pd + wantedAngle_offset, (uint16_t)0x6970);
 		}
 		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
