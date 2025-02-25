@@ -15,8 +15,21 @@ For now a precise alias of "69" for the slave must be set:
 `gcc ectest.c -o ectest -I path/to/ecrt.h_folder path/to/liberthercat.a`  
 
 If EC Master was build following Notion instructions, use
-`./compile.sh`. Just update EC_DIR (line 3) witht the path to the folder ($BUILD_DIR).  
+`make`. Just update EC_DIR (line 3) witht the path to the folder ($BUILD_DIR).  
 
 ## Run
 `./run.sh`
 
+## CROSS compile
+
+### install
+`sudo apt-get install gcc-aarch64-linux-gnu`
+
+### setup
+Use the direnv  
+
+### compile
+`make`
+
+### Run
+Copy the ectest file and run run.sh on target
