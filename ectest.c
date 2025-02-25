@@ -1,7 +1,20 @@
-#include <ecrt.h> // The ethercat lib
+#include <ecrt.h> // The etec_pdo_entry_reg_thercat lib
 #include <stdio.h>
 #include <time.h>
 #include <sys/ioctl.h>
+
+// Macros to use big-endian even if ethercat master is compiled in litle-endian.
+#define sendMessage(ethercat_data_pointer, msg) \
+    _Generic((msg), \
+        uint8_t: sendMessage_u8, \
+        uint16_t: sendMessage_u16 \
+    )(ethercat_data_pointer, msg)
+
+#define readMessage(ethercat_data_pointer, type) \
+    _Generic((type), \
+        uint8_t: readMessage_u8, \
+        uint16_t: readMessage_u16 \
+    )(ethercat_data_pointer)
 
 #define FREQUENCY 1000
 #define CLOCK_TO_USE CLOCK_MONOTONIC
@@ -28,11 +41,77 @@ const struct timespec cycletime = {0, PERIOD_NS};
 
 // Process data
 static uint8_t *domain1_pd = NULL; // To access data in the domain and send data in the domain. Essentially the pointer to the start of the domain.
-static unsigned int receiveOffset; // Offset from the start of the domain, to access the correct byte.
-static unsigned int sendOffset; // Offset from the start of the domain, to access the correct byte.
+static unsigned int motorBase_offset; // Offset from the start of the domain, to access the correct byte._t
+static unsigned int otherMessage_offset; // Offset from the start of the domain, to access the correct byte.
+static unsigned int wantedDistance_offset;
+static unsigned int wantedAngle_offset;
+static unsigned int wantedSpeed_offset;
+static unsigned int wantedRotation_offset;
+static const ec_pdo_entry_reg_t domain1_regs[] =
+{
+    // Outputs (RxPDO) - SM0
+	{SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x01, &wantedDistance_offset, 0}, // wanted_distance
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x02, &wantedAngle_offset, 0}, // wanted_angle
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x03, &wantedSpeed_offset, 0}, // wanted_speed
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x04, &wantedRotation_offset, 0}, // wanted_rotation
 
-static const ec_pdo_entry_reg_t domain1_regs[] = // Register the RX_pdos (data to receive)
-		{{SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 1, &receiveOffset, 0}}; // One variable to receive per line.
+    // Inputs (TxPDO) - SM1
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x02, &motorBase_offset, 0},  // motorBase_state
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x01, &otherMessage_offset, 0}, // other_message
+};
+
+// Define PDO entries for the slave
+// SENT TO SLAVE
+const ec_pdo_entry_info_t rxpdo_entries[] = {
+	{0x0005, 0x01, 16}, // wanted_distance
+    {0x0005, 0x02, 16}, // wanted_angle
+    {0x0005, 0x03, 16}, // wanted_speed
+    {0x0005, 0x04, 16}, // wanted_rotation
+};
+
+// RECEIVED FROM SLAVE
+const ec_pdo_entry_info_t txpdo_entries[] =
+{
+    {0x0006, 0x02, 8}, // motorBase_state
+    {0x0006, 0x01, 16}, // other_message
+};
+
+// Define PDOs
+const ec_pdo_info_t pdos_out[] = {
+    {0x1600, 4, rxpdo_entries},  // RxPDO for outputs
+};
+
+const ec_pdo_info_t pdos_in[] = {
+    {0x1A00, 2, txpdo_entries},  // TxPDO for inputs
+};
+
+// Define Sync Managers
+const ec_sync_info_t syncs[] = {
+    //{0, EC_DIR_OUTPUT, 0, NULL, EC_WD_DISABLE},    // Sync Manager 0, no PDOs
+    //{1, EC_DIR_INPUT, 0, NULL, EC_WD_DISABLE},     // Sync Manager 1, no PDOs
+    {0, EC_DIR_OUTPUT, 1, pdos_out, EC_WD_DEFAULT}, // Sync Manager 2, RxPDOs (Outputs)
+    {1, EC_DIR_INPUT, 1, pdos_in, EC_WD_DEFAULT},  // Sync Manager 3, TxPDOs (Inputs)
+    {0xFF}  // End of sync manager list
+};
+
+void sendMessage_u8(const uint8_t* ethercat_data_pointer, const uint8_t msg)
+{
+	EC_WRITE_U8(ethercat_data_pointer, msg);
+}
+void sendMessage_u16(const uint8_t* ethercat_data_pointer, const uint16_t msg)
+{
+	uint16_t msgLitleEndian = (msg >> 8) | (msg << 8);
+	EC_WRITE_U16(ethercat_data_pointer, msgLitleEndian);
+}
+
+uint8_t readMessage_u8(const uint8_t* ethercat_data_pointer) {
+    return EC_READ_U8(ethercat_data_pointer);
+}
+
+uint16_t readMessage_u16(const uint8_t* ethercat_data_pointer) {
+    uint16_t value = EC_READ_U16(ethercat_data_pointer);
+    return (value >> 8) | (value << 8);  // Convert to big-endian if needed
+}
 
 // Helper function for timespecs
 struct timespec timespec_add(struct timespec time1, struct timespec time2);
@@ -79,7 +158,7 @@ void cyclic_task()
 	{
 		// Debug count for testing
 		count ++;
-		count = count%10;
+		//count = count%10;
 		// Define the cycling period
 		// TODO: make it clearer
 		wakeupTime = timespec_add(wakeupTime, cycletime);
@@ -93,9 +172,23 @@ void cyclic_task()
 		//ecrt_domain_process(domain1);
 		//check_domain1_state();
 
-		printf("data: %u\n", EC_READ_U8(domain1_pd + receiveOffset));
-		EC_WRITE_U8(domain1_pd + sendOffset, count);
+		//if(1)
+		static int lowerCounter = 0;
+		if(count%1000 == 0)
+		{
+			lowerCounter = (++lowerCounter) % 1000;
+			//printf("motorBase_state: %02x\n", EC_READ_U8(domain1_pd + motorBase_offset));
+			/// !!! LITLE ENDIAN
+			uint16_t otherMessage_litleENdian = EC_READ_U16(domain1_pd + otherMessage_offset);
+			uint16_t otherMessage_bigEndian = (otherMessage_litleENdian >> 8) | (otherMessage_litleENdian << 8);
+			// Convert to Big Endian
+			//printf("other_message: %04x\n", otherMessage_bigEndian);
 
+			//printf("motorBase_state: %02x\n", readMessage(domain1_pd + motorBase_offset, (uint8_t)0));
+			//printf("other_message: %04x\n", readMessage(domain1_pd + otherMessage_offset, (uint16_t)0));
+			sendMessage(domain1_pd + wantedDistance_offset, (uint16_t)(lowerCounter));
+			sendMessage(domain1_pd + wantedAngle_offset, (uint16_t)0x6970);
+		}
 		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
 
@@ -146,6 +239,36 @@ int main ( void )
 		printf("master slave config created\n");
 	}
 
+	/*
+	// Register all PDO entries at once
+	if (ecrt_domain_reg_pdo_entry_list(domain1, domain1_regs)) {
+    		fprintf(stderr, "PDO entry registration failed!\n");
+    		//return -1;
+	}
+	*/
+
+    if (ecrt_slave_config_pdos(sc, EC_END, syncs)) {
+        printf("Failed to configure PDOs!\n");
+        return -1;
+    }
+	else
+	{
+		printf("Successfully configured pdos.\n");
+	}
+
+motorBase_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 2, domain1, NULL);
+printf("motorBaseState_offset: %u\n", motorBase_offset);
+otherMessage_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 1, domain1, NULL);
+printf("otherMessage_offset: %u\n", otherMessage_offset);
+wantedDistance_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 1, domain1, NULL);
+printf("wantedDistance_offset: %u\n", wantedDistance_offset);
+wantedAngle_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 2, domain1, NULL);
+printf("wantedAngle_offset: %u\n", wantedAngle_offset);
+wantedSpeed_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 3, domain1, NULL);
+printf("wantedSpeed_offset: %u\n", wantedSpeed_offset);
+wantedRotation_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 4, domain1, NULL);
+printf("wantedRotation_offset: %u\n", wantedRotation_offset);
+	/*
 	// Register PDOs entry for exchange in domain
 	
     receiveOffset = ecrt_slave_config_reg_pdo_entry(sc, 0x0006, 1, domain1, NULL);
@@ -169,7 +292,7 @@ int main ( void )
 	{
 		printf("PDO registered\n");
 	}
-	
+	*/
 	// Activating
 	printf("Activating master...\n");
     if (ecrt_master_activate(master))
