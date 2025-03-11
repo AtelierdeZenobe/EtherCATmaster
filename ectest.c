@@ -2,6 +2,13 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/ioctl.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdint.h>
 
 // Macros to use big-endian even if ethercat master is compiled in litle-endian.
 #define sendMessage(ethercat_data_pointer, msg) \
@@ -148,7 +155,19 @@ void check_domain1_state(void)
     domain1_state = ds;
 }
 
-void cyclic_task()
+struct data
+{
+	uint16_t wanted_distance;
+	uint16_t wanted_angle;
+	uint16_t wanted_rotation;
+	uint16_t wanted_speed;
+};
+
+
+#define SHM_NAME "/my_shared_memory"
+#define SHM_SIZE sizeof(struct data)  // Size of the struct
+
+void cyclic_task(struct data *ptr)
 {
 	struct timespec wakeupTime, time;
 	clock_gettime(CLOCK_TO_USE, &wakeupTime);
@@ -156,6 +175,9 @@ void cyclic_task()
 	int count = 0;
 	while(1)
 	{
+		printf("Distance: %d, Angle: %d, Rotation: %d, Speed: %d\n", 
+			ptr->wanted_distance, ptr->wanted_angle, ptr->wanted_rotation, ptr->wanted_speed);
+
 		// Debug count for testing
 		count ++;
 		//count = count%10;
@@ -200,7 +222,20 @@ void cyclic_task()
 // TODO: init function with all this then only cyclic task
 int main ( void )
 {
-	
+	// Open the shared memory object
+	int fd = shm_open(SHM_NAME, O_RDONLY, 0666);
+	if (fd == -1) {
+		perror("shm_open");
+		return 1;
+	}
+
+	// Map the shared memory
+	struct data *ptr = mmap(NULL, SHM_SIZE, PROT_READ, MAP_SHARED, fd, 0);
+	if (ptr == MAP_FAILED) {
+		perror("mmap");
+		return 1;
+	}
+
 	ec_slave_config_t *sc;
 	// Get master
 	master = ecrt_request_master (0) ;
@@ -316,7 +351,7 @@ printf("wantedRotation_offset: %u\n", wantedRotation_offset);
 	}
 
 	printf("Starting cyclic function.\n");
-    cyclic_task();
+    cyclic_task(ptr);
 	
 	return 0;
 }

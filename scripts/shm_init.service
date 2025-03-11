@@ -1,0 +1,11 @@
+[Unit]
+Description=Shared Memory Initializer
+After=network.target
+
+[Service]
+ExecStart=/usr/local/bin/shm_init
+Restart=always
+User=root
+
+[Install]
+WantedBy=multi-user.target
