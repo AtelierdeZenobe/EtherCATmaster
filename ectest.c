@@ -175,9 +175,6 @@ void cyclic_task(struct data *ptr)
 	int count = 0;
 	while(1)
 	{
-		printf("Distance: %d, Angle: %d, Rotation: %d, Speed: %d\n", 
-			ptr->wanted_distance, ptr->wanted_angle, ptr->wanted_rotation, ptr->wanted_speed);
-
 		// Debug count for testing
 		count ++;
 		//count = count%10;
@@ -208,9 +205,16 @@ void cyclic_task(struct data *ptr)
 
 			//printf("motorBase_state: %02x\n", readMessage(domain1_pd + motorBase_offset, (uint8_t)0));
 			//printf("other_message: %04x\n", readMessage(domain1_pd + otherMessage_offset, (uint16_t)0));
-			sendMessage(domain1_pd + wantedDistance_offset, (uint16_t)(lowerCounter));
-			sendMessage(domain1_pd + wantedAngle_offset, (uint16_t)0x6970);
+
+			printf("Distance: %d, Angle: %d, Rotation: %d, Speed: %d\n", 
+				ptr->wanted_distance, ptr->wanted_angle, ptr->wanted_rotation, ptr->wanted_speed);
+
+			
 		}
+		sendMessage(domain1_pd + wantedDistance_offset, ptr->wanted_distance);
+		sendMessage(domain1_pd + wantedAngle_offset, ptr->wanted_angle);
+		sendMessage(domain1_pd + wantedRotation_offset, ptr->wanted_rotation);
+		sendMessage(domain1_pd + wantedRotation_offset, ptr->wanted_speed);
 		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
 
