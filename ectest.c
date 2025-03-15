@@ -214,7 +214,7 @@ void cyclic_task(struct data *ptr)
 		sendMessage(domain1_pd + wantedDistance_offset, ptr->wanted_distance);
 		sendMessage(domain1_pd + wantedAngle_offset, ptr->wanted_angle);
 		sendMessage(domain1_pd + wantedRotation_offset, ptr->wanted_rotation);
-		sendMessage(domain1_pd + wantedRotation_offset, ptr->wanted_speed);
+		sendMessage(domain1_pd + wantedSpeed_offset, ptr->wanted_speed);
 		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
 
