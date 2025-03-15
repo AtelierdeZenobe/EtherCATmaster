@@ -59,8 +59,8 @@ static const ec_pdo_entry_reg_t domain1_regs[] =
     // Outputs (RxPDO) - SM0
 	{SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x01, &wantedDistance_offset, 0}, // wanted_distance
     {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x02, &wantedAngle_offset, 0}, // wanted_angle
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x03, &wantedSpeed_offset, 0}, // wanted_speed
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x04, &wantedRotation_offset, 0}, // wanted_rotation
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x03, &wantedRotation_offset, 0}, // wanted_speed
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x04, &wantedSpeed_offset, 0}, // wanted_rotation
 
     // Inputs (TxPDO) - SM1
     {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x02, &motorBase_offset, 0},  // motorBase_state
