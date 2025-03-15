@@ -72,8 +72,8 @@ static const ec_pdo_entry_reg_t domain1_regs[] =
 const ec_pdo_entry_info_t rxpdo_entries[] = {
 	{0x0005, 0x01, 16}, // wanted_distance
     {0x0005, 0x02, 16}, // wanted_angle
-    {0x0005, 0x03, 16}, // wanted_speed
-    {0x0005, 0x04, 16}, // wanted_rotation
+    {0x0005, 0x03, 16}, // wanted_rotation
+    {0x0005, 0x04, 16}, // wanted_speed
 };
 
 // RECEIVED FROM SLAVE
@@ -303,10 +303,10 @@ wantedDistance_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 1, domain1, 
 printf("wantedDistance_offset: %u\n", wantedDistance_offset);
 wantedAngle_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 2, domain1, NULL);
 printf("wantedAngle_offset: %u\n", wantedAngle_offset);
-wantedSpeed_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 3, domain1, NULL);
-printf("wantedSpeed_offset: %u\n", wantedSpeed_offset);
-wantedRotation_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 4, domain1, NULL);
+wantedRotation_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 3, domain1, NULL);
 printf("wantedRotation_offset: %u\n", wantedRotation_offset);
+wantedSpeed_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 4, domain1, NULL);
+printf("wantedSpeed_offset: %u\n", wantedSpeed_offset);
 	/*
 	// Register PDOs entry for exchange in domain
 	
