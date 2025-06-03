@@ -2,6 +2,13 @@
 #include <stdio.h>
 #include <time.h>
 #include <sys/ioctl.h>
+#include <stdlib.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#include <string.h>
+#include <stdint.h>
 
 // Macros to use big-endian even if ethercat master is compiled in litle-endian.
 #define sendMessage(ethercat_data_pointer, msg) \
@@ -52,8 +59,8 @@ static const ec_pdo_entry_reg_t domain1_regs[] =
     // Outputs (RxPDO) - SM0
 	{SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x01, &wantedDistance_offset, 0}, // wanted_distance
     {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x02, &wantedAngle_offset, 0}, // wanted_angle
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x03, &wantedSpeed_offset, 0}, // wanted_speed
-    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x04, &wantedRotation_offset, 0}, // wanted_rotation
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x03, &wantedRotation_offset, 0}, // wanted_speed
+    {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0005, 0x04, &wantedSpeed_offset, 0}, // wanted_rotation
 
     // Inputs (TxPDO) - SM1
     {SlaveAlias, SlavePos, SlaveVendorId, SlaveProductCode, 0x0006, 0x02, &motorBase_offset, 0},  // motorBase_state
@@ -65,8 +72,8 @@ static const ec_pdo_entry_reg_t domain1_regs[] =
 const ec_pdo_entry_info_t rxpdo_entries[] = {
 	{0x0005, 0x01, 16}, // wanted_distance
     {0x0005, 0x02, 16}, // wanted_angle
-    {0x0005, 0x03, 16}, // wanted_speed
-    {0x0005, 0x04, 16}, // wanted_rotation
+    {0x0005, 0x03, 16}, // wanted_rotation
+    {0x0005, 0x04, 16}, // wanted_speed
 };
 
 // RECEIVED FROM SLAVE
@@ -148,7 +155,19 @@ void check_domain1_state(void)
     domain1_state = ds;
 }
 
-void cyclic_task()
+struct data
+{
+	uint16_t wanted_distance;
+	uint16_t wanted_angle;
+	uint16_t wanted_rotation;
+	uint16_t wanted_speed;
+};
+
+
+#define SHM_NAME "/my_shared_memory"
+#define SHM_SIZE sizeof(struct data)  // Size of the struct
+
+void cyclic_task(struct data *ptr)
 {
 	struct timespec wakeupTime, time;
 	clock_gettime(CLOCK_TO_USE, &wakeupTime);
@@ -186,9 +205,16 @@ void cyclic_task()
 
 			//printf("motorBase_state: %02x\n", readMessage(domain1_pd + motorBase_offset, (uint8_t)0));
 			//printf("other_message: %04x\n", readMessage(domain1_pd + otherMessage_offset, (uint16_t)0));
-			sendMessage(domain1_pd + wantedDistance_offset, (uint16_t)(lowerCounter));
-			sendMessage(domain1_pd + wantedAngle_offset, (uint16_t)0x6970);
+
+			printf("Distance: %d, Angle: %d, Rotation: %d, Speed: %d\n", 
+				ptr->wanted_distance, ptr->wanted_angle, ptr->wanted_rotation, ptr->wanted_speed);
+
+			
 		}
+		sendMessage(domain1_pd + wantedDistance_offset, ptr->wanted_distance);
+		sendMessage(domain1_pd + wantedAngle_offset, ptr->wanted_angle);
+		sendMessage(domain1_pd + wantedRotation_offset, ptr->wanted_rotation);
+		sendMessage(domain1_pd + wantedSpeed_offset, ptr->wanted_speed);
 		// Enqueue data from EC_WRITE_..
 		ecrt_domain_queue(domain1);
 
@@ -200,7 +226,20 @@ void cyclic_task()
 // TODO: init function with all this then only cyclic task
 int main ( void )
 {
-	
+	// Open the shared memory object
+	int fd = shm_open(SHM_NAME, O_RDONLY, 0666);
+	if (fd == -1) {
+		perror("shm_open");
+		return 1;
+	}
+
+	// Map the shared memory
+	struct data *ptr = mmap(NULL, SHM_SIZE, PROT_READ, MAP_SHARED, fd, 0);
+	if (ptr == MAP_FAILED) {
+		perror("mmap");
+		return 1;
+	}
+
 	ec_slave_config_t *sc;
 	// Get master
 	master = ecrt_request_master (0) ;
@@ -264,10 +303,10 @@ wantedDistance_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 1, domain1, 
 printf("wantedDistance_offset: %u\n", wantedDistance_offset);
 wantedAngle_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 2, domain1, NULL);
 printf("wantedAngle_offset: %u\n", wantedAngle_offset);
-wantedSpeed_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 3, domain1, NULL);
-printf("wantedSpeed_offset: %u\n", wantedSpeed_offset);
-wantedRotation_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 4, domain1, NULL);
+wantedRotation_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 3, domain1, NULL);
 printf("wantedRotation_offset: %u\n", wantedRotation_offset);
+wantedSpeed_offset = ecrt_slave_config_reg_pdo_entry(sc, 0x0005, 4, domain1, NULL);
+printf("wantedSpeed_offset: %u\n", wantedSpeed_offset);
 	/*
 	// Register PDOs entry for exchange in domain
 	
@@ -316,7 +355,7 @@ printf("wantedRotation_offset: %u\n", wantedRotation_offset);
 	}
 
 	printf("Starting cyclic function.\n");
-    cyclic_task();
+    cyclic_task(ptr);
 	
 	return 0;
 }
