@@ -1,0 +1,23 @@
+#
+# EtherCAT master kernel modules
+#
+
+[Unit]
+Description=Runs the brain code
+
+#Requires=ethercat.service
+After=ethercat.service
+After=shm_init.service
+#Before=network.service
+
+[Service]
+Type=simple
+#RemainAfterExit=yes
+ExecStart=/home/pi/EtherCATmaster/run.sh
+User=pi
+#ExecStop=/usr/local/sbin/ethercatctl stop
+Restart=on-failure
+RestartSec=1
+
+[Install]
+WantedBy=multi-user.target
