@@ -6,11 +6,23 @@ TODO: doc directly here
 For now: check Notion: https://www.notion.so/Ethercat-974932e2afe847ffa96708ea65085133
 
 ## Environment setup
+### SLave
 TO BE FIXED:
 For now a precise alias of "69" for the slave must be set:
-`ethercat alias 69 -p 0 #If only one slave is connected, its ID should be 0.`
+`ethercat alias 69 -p 0 #If only one slave is connected, its ID should be 0.`  
 
-### Shared memory setup
+### Master
+
+#### Main code
+(Optional) Setup brain service to run main code at boot  
+mv brain.service /etc/systemd/system/
+```
+sudo systemctl enable brain.service
+sudo systemctl daemon-reload
+sudo systemctl start brain.service
+```
+
+#### Shared memory setup
 ```
 home=$(git rev-parse --show-toplevel)
 
